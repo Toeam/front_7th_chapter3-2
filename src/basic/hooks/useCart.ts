@@ -61,6 +61,7 @@ export function useCart(options: UseCartOptions = {}) {
     [cart]
   );
 
+  // 개별 아이템의 할인 적용 후 총액 계산
   const calculateItemTotal = useCallback(
     (item: CartItem): number => {
       const { price } = item.product;
