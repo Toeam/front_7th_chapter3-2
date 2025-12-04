@@ -40,55 +40,62 @@ export function useCart(options: UseCartOptions = {}) {
     [cart]
   );
 
-  const getMaxApplicableDiscount = useCallback(
-    (item: CartItem): number => {
+  // 현재 cart 상태 값이 필요함
+  const getMaxApplicableDiscount = (item: CartItem, cart: CartItem[]): number => {
+      // 상품의 할인 정보를 가져옴
       const { discounts } = item.product;
+      // 상품의 수량을 가져옴
       const { quantity } = item;
+      // 상품의 할인 정보를 가져옴
 
+      //최대 할인율 계산 
       const baseDiscount = discounts.reduce((maxDiscount, discount) => {
         return quantity >= discount.quantity && discount.rate > maxDiscount
           ? discount.rate
           : maxDiscount;
       }, 0);
 
-      const hasBulkPurchase = cart.some(cartItem => cartItem.quantity >= 10);
+      const hasBulkPurchase = cart.some((cartItem: CartItem) => cartItem.quantity >= 10);
       if (hasBulkPurchase) {
         return Math.min(baseDiscount + 0.05, 0.5);
       }
-
       return baseDiscount;
-    },
-    [cart]
-  );
+    };
 
-  // 개별 아이템의 할인 적용 후 총액 계산
-  const calculateItemTotal = useCallback(
-    (item: CartItem): number => {
-      const { price } = item.product;
-      const { quantity } = item;
-      const discount = getMaxApplicableDiscount(item);
+  // 개별 아이템의 할인 적용 후 총액 계산 (순수 함수)
+  const calculateItemTotalPure = (item: CartItem, cartItems: CartItem[]): number => {
+    const { price } = item.product;
+    const { quantity } = item;
+    const discount = getMaxApplicableDiscount(item, cartItems);
 
-      return Math.round(price * quantity * (1 - discount));
-    },
-    [getMaxApplicableDiscount]
-  );
+    return Math.round(price * quantity * (1 - discount));
+  };
 
-  const totals = useMemo(() => {
+  // 총합 도출에 대한 계산식 모음
+  const calculateCartTotals = (
+    cartItems: CartItem[],
+    coupon: Coupon | null
+  ): { totalBeforeDiscount: number; totalAfterDiscount: number } => {
     let totalBeforeDiscount = 0;
     let totalAfterDiscount = 0;
 
-    cart.forEach(item => {
+    cartItems.forEach(item => {
+      // 장바구니의 총액
       const itemPrice = item.product.price * item.quantity;
+
+      // 할인 전 총액
       totalBeforeDiscount += itemPrice;
-      totalAfterDiscount += calculateItemTotal(item);
+
+      // 할인 후 총액
+      totalAfterDiscount += calculateItemTotalPure(item, cartItems);
     });
 
-    if (selectedCoupon) {
-      if (selectedCoupon.discountType === 'amount') {
-        totalAfterDiscount = Math.max(0, totalAfterDiscount - selectedCoupon.discountValue);
+    if (coupon) {
+      if (coupon.discountType === 'amount') {
+        totalAfterDiscount = Math.max(0, totalAfterDiscount - coupon.discountValue);
       } else {
         totalAfterDiscount = Math.round(
-          totalAfterDiscount * (1 - selectedCoupon.discountValue / 100)
+          totalAfterDiscount * (1 - coupon.discountValue / 100)
         );
       }
     }
@@ -97,9 +104,21 @@ export function useCart(options: UseCartOptions = {}) {
       totalBeforeDiscount: Math.round(totalBeforeDiscount),
       totalAfterDiscount: Math.round(totalAfterDiscount),
     };
-  }, [cart, selectedCoupon, calculateItemTotal]);
+  };
 
-  const addToCartPure = (cartState: CartItem[], product: Product): CartItem[] => {
+  // 계산만 도출
+  const totals = useMemo(() => {
+    return calculateCartTotals(cart, selectedCoupon);
+  }, [cart, selectedCoupon]);
+
+  // 현재 cart 상태를 사용하는 calculateItemTotal 래퍼 (UI에서 사용)
+  const calculateItemTotal = useCallback(
+    (item: CartItem): number => calculateItemTotalPure(item, cart),
+    [cart]
+  );
+
+  // 장바구니 삼품 추가 순수계산
+  const addItemToCart = (cartState: CartItem[], product: Product): CartItem[] => {
     const existingItem = cartState.find(item => item.product.id === product.id);
     if (existingItem) {
       const newQuantity = existingItem.quantity + 1;
@@ -122,7 +141,7 @@ export function useCart(options: UseCartOptions = {}) {
 
       let exceeded = false;
       setCart(prevCart => {
-        const next = addToCartPure(prevCart, product);
+        const next = addItemToCart(prevCart, product);
         if (next === prevCart) {
           exceeded = true;
         }
@@ -143,13 +162,19 @@ export function useCart(options: UseCartOptions = {}) {
   }, []);
 
   const updateQuantity = useCallback(
-    (productId: string, newQuantity: number, product?: Product) => {
+    (productId: string, newQuantity: number) => {
       if (newQuantity <= 0) {
         setCart(prevCart => prevCart.filter(item => item.product.id !== productId));
         return { ok: true as const };
       }
 
-      if (product && newQuantity > product.stock) {
+      const targetItem = cart.find(item => item.product.id === productId);
+      if (!targetItem) {
+        return { ok: false as const, reason: 'NOT_FOUND' as const };
+      }
+
+      const maxStock = targetItem.product.stock;
+      if (newQuantity > maxStock) {
         return { ok: false as const, reason: 'EXCEED_STOCK' as const };
       }
 
@@ -158,9 +183,10 @@ export function useCart(options: UseCartOptions = {}) {
           item.product.id === productId ? { ...item, quantity: newQuantity } : item
         )
       );
+
       return { ok: true as const };
     },
-    []
+    [cart]
   );
 
   const applyCoupon = useCallback(

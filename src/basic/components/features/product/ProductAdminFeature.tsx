@@ -35,19 +35,21 @@ interface ProductAdminFeatureProps {
   addNotification: (message: string, type?: 'error' | 'success' | 'warning') => void;
 }
 
-export function ProductAdminFeature({
-  products,
-  formatPrice,
-  showProductForm,
-  setShowProductForm,
-  editingProduct,
-  productForm,
-  setProductForm,
-  startEditProduct,
-  deleteProduct,
-  handleProductSubmit,
-  addNotification
-}: ProductAdminFeatureProps) {
+export function ProductAdminFeature(props: ProductAdminFeatureProps) {
+  const {
+    products,
+    formatPrice,
+    showProductForm,
+    setShowProductForm,
+    editingProduct,
+    setEditingProduct,
+    productForm,
+    setProductForm,
+    startEditProduct,
+    deleteProduct,
+    handleProductSubmit,
+    addNotification
+  } = props;
   return (
     <section className="bg-white rounded-lg border border-gray-200">
       <div className="p-6 border-b border-gray-200">
